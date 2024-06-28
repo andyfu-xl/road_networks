@@ -2,28 +2,51 @@ import copy
 
  
 class Knowledges:
-    def __init__(self, knowledges={}):
+    def __init__(self, knowledges={}, delays={}):
         self.knowledges = knowledges
+        self.delays = delays
     
-    def add_observations(self, observed_vehicles):
-        for vehicle, visibility in observed_vehicles.items():
+    def add_observations(self, vehicles, observed_vehicles):
+        for vehicle, visibility in zip(vehicles, observed_vehicles):
             if vehicle not in self.knowledges:
                 self.knowledges[vehicle] = []
-            self.knowledges[vehicle].append(visibility)
+                self.delays[vehicle] = 0
+            self.knowledges[vehicle].append(int(visibility))
+            if visibility == 0:
+                self.delays[vehicle] += 1
+            else:
+                self.delays[vehicle] = 0
     
-    def merge_knowledges(self, new_knowledges):
+    def merge_knowledges(self, new_knowledges, new_delays):
         for vehicle, visibility in new_knowledges.items():
             if vehicle not in self.knowledges:
-                self.knowledges[vehicle] = visibility.deepcopy()
+                self.knowledges[vehicle] = copy.deepcopy(visibility)
+                self.delays[vehicle] = new_delays[vehicle]
             else:
-                longer_length = max(len(self.knowledges[vehicle]), len(visibility))
-                # fill the former knowledge with 0s
-                self.knowledges[vehicle] = [0] * (longer_length - len(self.knowledges[vehicle])) + self.knowledges[vehicle]
-                # fill the new knowledge with 0s
-                visibility = [0] * (longer_length - len(visibility)) + visibility
-                # merge the two by or operation
+                assert len(self.knowledges[vehicle]) == len(visibility)
                 self.knowledges[vehicle] = [a | b for a, b in zip(self.knowledges[vehicle], visibility)]
-        return self.knowledges.deepcopy()
+                self.delays[vehicle] = min(self.delays[vehicle], new_delays[vehicle])
+        return copy.deepcopy(self.knowledges), copy.deepcopy(self.delays)
 
     def get_knowledges(self):
-        return self.knowledges.deepcopy()
+        return copy.deepcopy(self.knowledges)
+    
+    def get_delays(self):
+        return copy.deepcopy(self.delays)
+    
+    def evaluate_knowledge(self):
+        missing = 0
+        total = 0
+        delay = 0
+        for vehicle, visibility in self.knowledges.items():
+            missing += sum(visibility)
+            total += len(visibility)
+            delay += self.delays[vehicle]
+        return missing / total, delay / total
+
+class Beacon:
+    def __init__(self, trace_hidden):
+        self.trace_hidden = copy.deepcopy(trace_hidden)
+    
+    def update(self, trace_hidden):
+        self.trace_hidden = copy.deepcopy(trace_hidden)
