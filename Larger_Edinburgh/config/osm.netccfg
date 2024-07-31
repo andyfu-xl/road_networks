@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2024-06-09 12:38:14 by Eclipse SUMO netconvert Version 1.20.0
+<!-- generated on 2024-06-29 01:11:26 by Eclipse SUMO netconvert Version 1.20.0
 -->
 
 <configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netconvertConfiguration.xsd">
@@ -19,7 +19,6 @@
     <processing>
         <geometry.remove value="true"/>
         <roundabouts.guess value="true"/>
-        <lefthand value="true"/>
     </processing>
 
     <tls_building>
@@ -32,10 +31,6 @@
     <ramp_guessing>
         <ramps.guess value="true"/>
     </ramp_guessing>
-
-    <edge_removal>
-        <keep-edges.by-vclass value="passenger"/>
-    </edge_removal>
 
     <junctions>
         <junctions.join value="true"/>

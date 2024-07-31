@@ -25,8 +25,8 @@ if 'SUMO_HOME' in os.environ:
     print('SUMO_HOME found')
     sys.path.append(os.path.join(os.environ['SUMO_HOME'], 'tools'))
 
-# sumoBinary = checkBinary('sumo-gui')
-sumoBinary = checkBinary('sumo')
+sumoBinary = checkBinary('sumo-gui')
+# sumoBinary = checkBinary('sumo')
 roadNetwork = "./config/osm.sumocfg"
 sumoCmd = [sumoBinary, "-c", roadNetwork, "--start", "--quit-on-end"]
 
