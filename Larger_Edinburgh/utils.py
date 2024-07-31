@@ -1,32 +1,21 @@
 import os
 import sys
-import random
 import torch
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import TensorDataset, DataLoader
 from sumolib import checkBinary
 import traci
-import torch
-import sumolib
-import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GCNConv
-from torch_geometric.data import Data
-import sys
 import io
 from contextlib import redirect_stdout
 import pandas as pd
+from collections import deque
 
 if 'SUMO_HOME' in os.environ:
     print('SUMO_HOME found')
     sys.path.append(os.path.join(os.environ['SUMO_HOME'], 'tools'))
 
-sumoBinary = checkBinary('sumo-gui')
-# sumoBinary = checkBinary('sumo')
+sumoBinary = checkBinary('sumo')
 roadNetwork = "./config/osm.sumocfg"
 sumoCmd = [sumoBinary, "-c", roadNetwork, "--start", "--quit-on-end"]
 
@@ -49,6 +38,13 @@ def restart(dur, density):
         for i in range(100):
             traci.simulationStep()
             step += 1
+
+def quickstart(cmd):
+    try:
+        traci.close()
+    except:
+        pass
+    traci.start(cmd)
 
 def close():
     traci.close()
@@ -80,30 +76,6 @@ def plot_trajectories(trajectories, n=10):
         y = trajectory[1::4]
         plt.plot(x, y)
     plt.show()
-
-def check_parallel_graph():
-    net = sumolib.net.readNet('./config/osm.net.xml.gz')
-    # Extract nodes and edges
-    nodes = net.getNodes()
-    edges = net.getEdges()
-
-    edges_from_to = {}
-    for edge in edges:
-        from_node = edge.getFromNode().getID()
-        to_node = edge.getToNode().getID()
-        if (from_node, to_node) not in edges_from_to:
-            edges_from_to[(from_node, to_node)] = [edge]
-        else:
-            edges_from_to[(from_node, to_node)].append(edge)
-
-    for from_node, to_node in edges_from_to.keys():
-        if len(edges_from_to[(from_node, to_node)]) > 1:
-            print(from_node, to_node)
-            for edge in edges_from_to[(from_node, to_node)]:
-                print(edge.getID())
-                num_lanes = edge.getLaneNumber()
-                speed_limit = edge.getSpeed()
-                length = edge.getLength()
 
 def padding_dict(dict):
     max_len = max([len(dict[key]) for key in dict.keys()])
@@ -150,3 +122,123 @@ def get_planned_path():
             planned_path[veh] = points
     traci.close()
     return padding_dict2(planned_path)
+
+def missing(x, y, z, p):
+    return torch.tensor(np.repeat(np.random.rand(x * y) < p, z).reshape(x, y, z)).float()
+
+def generate_masks(tensors, min_mask_ratio=0.2, max_mask_ratio=0.4, missing_ratio=0.5, complete_traj_ratio=0.8):
+    initial_masks = missing(tensors.shape[0], tensors.shape[1], tensors.shape[2], missing_ratio)
+    masks = []
+    for initial_mask in initial_masks:
+        if np.random.rand() < complete_traj_ratio:
+            masks.append(torch.zeros_like(initial_mask).tolist())
+            continue
+        seq_length = initial_mask.shape[0]
+        mask_start = np.random.randint(int(seq_length * min_mask_ratio), int(seq_length * max_mask_ratio))
+        mask = torch.zeros_like(initial_mask)
+        mask[:, :mask_start] = 1
+        mask = initial_mask * mask
+        mask[0] = 0
+        mask[1] = 0
+        masks.append(mask.tolist())
+    return torch.tensor(masks)
+
+def project_to_nearest(prediction, planned_path):
+    with torch.no_grad():
+        starts = planned_path[:, :-1, :]
+        to = planned_path[:, 1:, :]
+
+        prediction = prediction.unsqueeze(1).repeat(1, starts.shape[1], 1)
+        ap = prediction - starts
+        ab = to - starts
+        numerator = torch.einsum('ijk,ijk->ij', ap, ab)
+        denominator = torch.einsum('ijk,ijk->ij', ab, ab)
+        t = numerator / denominator
+        t = torch.nan_to_num(t, nan=0.0)
+        t = torch.clamp(t, 0, 1)
+        projections = starts + t.unsqueeze(2) * ab
+        diff = projections - prediction
+        distances = torch.norm(diff, dim=2)
+        min_indices = torch.argmin(distances, dim=1)
+        projections = projections[range(projections.shape[0]), min_indices]
+        return projections, min_indices
+
+def project_to_nearest_with_checkpoints(prediction, planned_path):
+    with torch.no_grad():
+        starts = planned_path[:, :-1, :]
+        to = planned_path[:, 1:, :]
+
+        prediction = prediction.unsqueeze(1).repeat(1, starts.shape[1], 1)
+        ap = prediction - starts
+        ab = to - starts
+        numerator = torch.einsum('ijk,ijk->ij', ap, ab)
+        denominator = torch.einsum('ijk,ijk->ij', ab, ab)
+        t = numerator / denominator
+        t = torch.nan_to_num(t, nan=0.0)
+        t = torch.clamp(t, 0, 1)
+        projections = starts + t.unsqueeze(2) * ab
+        diff = projections - prediction
+        distances = torch.norm(diff, dim=2)
+        min_indices = torch.argmin(distances, dim=1)
+        projections = projections[range(projections.shape[0]), min_indices]
+        next_checkpoint = to[range(to.shape[0]), min_indices]
+        pad_to = F.pad(to, (0, 0, 1, 0), value=0)
+        next_next_checkpoint = pad_to[range(to.shape[0]), min_indices + 1]
+        projections_with_checkpoints = torch.cat((projections, next_checkpoint, next_next_checkpoint), dim=1)
+        return projections_with_checkpoints
+
+def intervehicleConnectivity(threshold = None):
+    xs = []
+    ys = []
+    for vehicle in traci.vehicle.getIDList():
+        x, y = traci.vehicle.getPosition(vehicle)
+        xs.append(x)
+        ys.append(y)
+    xs = torch.tensor(xs, dtype=torch.float32).view(-1,1)
+    ys = torch.tensor(ys, dtype=torch.float32).view(-1,1)
+    intervehicle_distances = torch.sqrt((xs - xs.t())**2 + (ys - ys.t())**2)
+    if threshold is not None:
+        # make the distances 1 if less than the threshold, 0 otherwise
+        connectivity = torch.where(intervehicle_distances < threshold, torch.ones_like(intervehicle_distances), torch.zeros_like(intervehicle_distances))
+    assert connectivity.shape[0] == intervehicle_distances.shape[0]
+    return connectivity
+
+def intervehicleConnectivity_xs_ys(threshold = None):
+    xs = []
+    ys = []
+    for vehicle in traci.vehicle.getIDList():
+        x, y = traci.vehicle.getPosition(vehicle)
+        xs.append(x)
+        ys.append(y)
+    xs = torch.tensor(xs, dtype=torch.float32).view(-1,1)
+    ys = torch.tensor(ys, dtype=torch.float32).view(-1,1)
+    intervehicle_distances = torch.sqrt((xs - xs.t())**2 + (ys - ys.t())**2)
+    if threshold is not None:
+        # make the distances 1 if less than the threshold, 0 otherwise
+        connectivity = torch.where(intervehicle_distances < threshold, torch.ones_like(intervehicle_distances), torch.zeros_like(intervehicle_distances))
+    return connectivity, xs, ys
+
+
+def bfs_distance(adj_matrix):
+    n_hop_matrix = torch.ones_like(adj_matrix) * (-100)
+    for start_node in range(adj_matrix.size(0)):
+        visited = [0] * adj_matrix.size(0)
+        queue = deque([(start_node, 0)])
+        visited[start_node] = True
+        
+        while queue:
+            current_node, current_dist = queue.popleft()
+            
+            for neighbor, connected in enumerate(adj_matrix[current_node]):
+                if connected and not visited[neighbor]:
+                    queue.append((neighbor, current_dist + 1))
+                    visited[neighbor] = True
+                    n_hop_matrix[start_node, neighbor] = current_dist + 1
+    return n_hop_matrix
+
+def simplify_graph(adj_matrix):
+    adj_matrix = adj_matrix - torch.eye(adj_matrix.size(0))
+    degrees = torch.sum(adj_matrix, axis=0)
+    nodes_to_keep = np.where(degrees > 0)[0]
+    new_adj_matrix = adj_matrix[np.ix_(nodes_to_keep, nodes_to_keep)]
+    return new_adj_matrix
