@@ -229,7 +229,8 @@ class ReplayMemory(object):
 
     def __init__(self, capacity):
         self.memory = deque([], maxlen=capacity)
-        self.Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
+        self.Transition = namedtuple('Transition',
+                        ('data', 'action', 'next_state', 'reward', 'shuffle_indices'))
 
     def push(self, *args):
         self.memory.append(self.Transition(*args))
