@@ -89,15 +89,26 @@ def padding_dict2(dict):
         dict[key] += [[0,0]] * (max_len - len(dict[key]))
     return dict
 
+def padding_dict1(dict):
+    max_len = max([len(dict[key]) for key in dict.keys()])
+    for key in dict.keys():
+        dict[key] += [[-1,-1]] * (max_len - len(dict[key]))
+    return dict
+
 # pad trajectories to have the same length, then save as csv
 def to_csv(trajectories, name='edinburgh_trajectories.csv'):
     trajectories = padding_dict(trajectories)
     df = pd.DataFrame(list(trajectories.values()), index=trajectories.keys())
     df.to_csv(name)
 
+def to_csv_1(trajectories, name='edinburgh_trajectories.csv'):
+    trajectories = padding_dict1(trajectories)
+    df = pd.DataFrame(list(trajectories.values()), index=trajectories.keys())
+    df.to_csv(name)
+
 def get_planned_path():
     planned_path = {}
-    traci.start(sumoCmd)
+    quickstart(sumoCmd)
     step = 0
     while shouldContinueSim():
         traci.simulationStep()
