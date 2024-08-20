@@ -153,7 +153,7 @@ class SAGE_GDQN_Attention(nn.Module):
     max_n_neighbors: The maximum number of neighbors
     num_layers: Number of GCN layers
     """
-    def __init__(self, in_channels=13, n_nodes=55, hidden_dim=32, max_n_neighbors=6, num_layers=5):
+    def __init__(self, in_channels=13, n_nodes=55, hidden_dim=32, max_n_neighbors=6):
         super(SAGE_GDQN_Attention, self).__init__()
         self.n_nodes = n_nodes
         self.hidden_dim = hidden_dim
@@ -264,8 +264,9 @@ class DQN(nn.Module):
     hidden_dim: The number of features in the hidden state of GCN
     max_n_neighbors: The maximum number of neighbors
     """
-    def __init__(self, in_channels=4, n_nodes=57, hidden_dim=64, max_n_neighbors=15):
+    def __init__(self, in_channels=13, n_nodes=57, hidden_dim=64, max_n_neighbors=15):
         super(DQN, self).__init__()
+        self.in_channels = in_channels
         self.n_nodes = n_nodes
         self.hidden_dim = hidden_dim
         self.convs1 = GCNConv(in_channels, hidden_dim)
@@ -280,7 +281,7 @@ class DQN(nn.Module):
 
     def forward(self, data):
         x, edge_index = data.x, data.edge_index
-        x = x.reshape(-1, self.n_nodes * 4)
+        x = x.reshape(-1, self.n_nodes * self.in_channels)
         x = self.fc1(x)
         x = self.selu(x)
         x = self.fc2(x)
@@ -301,7 +302,7 @@ class GDQN(nn.Module):
     hidden_dim: The number of features in the hidden state of GCN
     max_n_neighbors: The maximum number of neighbors
     """
-    def __init__(self, in_channels=4, n_nodes=57, hidden_dim=64, dropout=0.1, max_n_neighbors=15):
+    def __init__(self, in_channels=13, n_nodes=57, hidden_dim=64, dropout=0.1, max_n_neighbors=15):
         super(GDQN, self).__init__()
         self.n_nodes = n_nodes
         self.hidden_dim = hidden_dim

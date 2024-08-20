@@ -86,8 +86,8 @@ class RoutingGym(gym.Env):
                 self.to_remove_indices = random.sample(self.to_remove_indices, len(self.to_remove_indices) - (self.max_n_neighbors - action_space))
             self.prunned_adj_matrix[self.to_remove_indices, :] = 0
             self.prunned_adj_matrix[:, self.to_remove_indices] = 0
-            self.prunned_n_hop_matrix[self.to_remove_indices, :] = 0
-            self.prunned_n_hop_matrix[:, self.to_remove_indices] = 0
+            self.prunned_n_hop_matrix[self.to_remove_indices, :] = -100
+            self.prunned_n_hop_matrix[:, self.to_remove_indices] = -100
 
     def step(self):
         traci.simulationStep()
@@ -108,7 +108,7 @@ class RoutingGym(gym.Env):
         curr_node_indicator = torch.zeros(self.n_nodes)
         curr_node_indicator[self.current_node] = 1
         self.end_node_indicator = self.prunned_adj_matrix[self.end_node]
-        distances = self.prunned_n_hop_matrix[self.current_node]
+        distances = self.prunned_n_hop_matrix[self.end_node]
         distances[distances == -100] = 8
         distances[distances > 7] = 7
         one_hot_distances = F.one_hot(distances.long(), num_classes=8).type(torch.float32)
@@ -130,7 +130,7 @@ class RoutingGym(gym.Env):
         curr_node_indicator[self.current_node] = 1
         self.end_node_indicator = self.prunned_adj_matrix[self.end_node]
         neighbour_indicator = self.prunned_adj_matrix[self.current_node]
-        distances = self.prunned_n_hop_matrix[self.current_node]
+        distances = self.prunned_n_hop_matrix[self.end_node]
         distances[distances == -100] = 8
         distances[distances > 7] = 7
         one_hot_distances = F.one_hot(distances.long(), num_classes=8).type(torch.float32)
@@ -179,7 +179,7 @@ class RoutingGym(gym.Env):
             self.node_pruning()
             curr_node_indicator = torch.zeros(self.n_nodes)
             curr_node_indicator[self.current_node] = 1
-            distances = self.prunned_n_hop_matrix[self.current_node]
+            distances = self.prunned_n_hop_matrix[self.end_node]
             distances[distances == -100] = 8
             distances[distances > 7] = 7
             one_hot_distances = F.one_hot(distances.long(), num_classes=8).type(torch.float32)
